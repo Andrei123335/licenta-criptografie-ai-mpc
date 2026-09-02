@@ -1,34 +1,90 @@
-from mpc_engine import ShamirMPCNode, reconstruct_shamir_2_nodes
+from mpc_engine import ShamirMPCNode, reconstruct_shamir_2_of_3
 
 
 if __name__ == "__main__":
+    # Corpul finit F_97
     P = 97
 
+    # Initializarea celor trei servere MPC
     server_A = ShamirMPCNode(node_id=1, prime=P)
     server_B = ShamirMPCNode(node_id=2, prime=P)
+    server_C = ShamirMPCNode(node_id=3, prime=P)
 
-    # Date de intrare mascate
-    # Exemplul pentru d=1 din Anexa B
-    # u_1 = 3, v_1 = 5, a_1 = 6, b_1 = 7, c_1 = 42
-    u1_A, u1_B = 18, 33
-    v1_A, v1_B = 15, 25
-    a1_A, a1_B = 16, 26
-    b1_A, b1_B = 19, 31
-    c1_A, c1_B = 57, 72
+    # Datele utilizatorului:
+    # u = (3, 4)
+    # v = (5, 2)
+    #
+    # Produsul scalar:
+    # u * v = 3 * 5 + 4 * 2 = 23
 
-    # Pasul 1: Mascare
-    dA, eA = server_A.compute_beaver_masks(u1_A, v1_A, a1_A, b1_A)
-    dB, eB = server_B.compute_beaver_masks(u1_B, v1_B, a1_B, b1_B)
+    # Fragmente Shamir pentru u1 = 3
+    u1_A, u1_B, u1_C = 18, 33, 48
 
-    # Pasul 2: Broadcast si reconstructie pentru d si e
-    d_public = reconstruct_shamir_2_nodes(dA, dB, 1, 2, P)
-    e_public = reconstruct_shamir_2_nodes(eA, eB, 1, 2, P)
+    # Fragmente Shamir pentru u2 = 4
+    u2_A, u2_B, u2_C = 24, 44, 64
 
-    # Pasul 3: Evaluare poarta Beaver pe servere
-    zA = server_A.evaluate_beaver_product(c1_A, a1_A, b1_A, d_public, e_public)
-    zB = server_B.evaluate_beaver_product(c1_B, a1_B, b1_B, d_public, e_public)
+    # Fragmente Shamir pentru v1 = 5
+    v1_A, v1_B, v1_C = 15, 25, 35
 
-    # Pasul 4: Reconstrucție produs final u_1 * v_1
-    produs_reconstruit = reconstruct_shamir_2_nodes(zA, zB, 1, 2, P)
+    # Fragmente Shamir pentru v2 = 2
+    v2_A, v2_B, v2_C = 10, 18, 26
 
-    print(f"[DEMO ANDREI] Resultat MPC u1 * v1: {produs_reconstruit} (Asteptat: 15)")
+    # Triplet Beaver pentru prima componenta:
+    # a1 = 6, b1 = 7, c1 = 42
+    a1_A, a1_B, a1_C = 16, 26, 36
+    b1_A, b1_B, b1_C = 19, 31, 43
+    c1_A, c1_B, c1_C = 57, 72, 87
+
+    # Triplet Beaver pentru a doua componenta:
+    # a2 = 4, b2 = 9, c2 = 36
+    a2_A, a2_B, a2_C = 9, 14, 19
+    b2_A, b2_B, b2_C = 12, 15, 18
+    c2_A, c2_B, c2_C = 43, 50, 57
+
+    # Serverele A si B calculeaza mastile pentru prima componenta
+    d1_A, e1_A = server_A.compute_beaver_masks(u1_A, v1_A, a1_A, b1_A)
+    d1_B, e1_B = server_B.compute_beaver_masks(u1_B, v1_B, a1_B, b1_B)
+
+    # Serverele A si B calculeaza mastile pentru a doua componenta
+    d2_A, e2_A = server_A.compute_beaver_masks(u2_A, v2_A, a2_A, b2_A)
+    d2_B, e2_B = server_B.compute_beaver_masks(u2_B, v2_B, a2_B, b2_B)
+
+    # Serverul C este temporar offline.
+    # Schema Shamir (2,3) permite reconstructia folosind A si B.
+
+    # Reconstructia publica a mastilor pentru prima componenta
+    d1_public = reconstruct_shamir_2_of_3(d1_A, 1, d1_B, 2, P)
+    e1_public = reconstruct_shamir_2_of_3(e1_A, 1, e1_B, 2, P)
+
+    # Reconstructia publica a mastilor pentru a doua componenta
+    d2_public = reconstruct_shamir_2_of_3(d2_A, 1, d2_B, 2, P)
+    e2_public = reconstruct_shamir_2_of_3(e2_A, 1, e2_B, 2, P)
+
+    # Evaluarea produsului Beaver pentru prima componenta
+    z1_A = server_A.evaluate_beaver_product(c1_A, a1_A, b1_A, d1_public, e1_public)
+    z1_B = server_B.evaluate_beaver_product(c1_B, a1_B, b1_B, d1_public, e1_public)
+
+    # Evaluarea produsului Beaver pentru a doua componenta
+    z2_A = server_A.evaluate_beaver_product(c2_A, a2_A, b2_A, d2_public, e2_public)
+    z2_B = server_B.evaluate_beaver_product(c2_B, a2_B, b2_B, d2_public, e2_public)
+
+    # Adunarea fragmentelor pentru produsul scalar
+    score_A = (z1_A + z2_A) % P
+    score_B = (z1_B + z2_B) % P
+
+    # Reconstructia rezultatului final
+    rezultat_mpc = reconstruct_shamir_2_of_3(score_A, 1, score_B, 2, P)
+
+    # Calcul direct pentru verificare
+    rezultat_direct = (3 * 5 + 4 * 2) % P
+
+    # Afisarea rezultatelor
+    print("[DEMO ANDREI]")
+    print(f"Rezultat MPC:    {rezultat_mpc}")
+    print(f"Rezultat direct: {rezultat_direct}")
+
+    # Verificarea corectitudinii
+    assert rezultat_mpc == rezultat_direct
+    assert rezultat_mpc == 23
+
+    print("Verificare: OK")
